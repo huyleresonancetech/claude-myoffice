@@ -40,4 +40,7 @@ for d in "$REPO_DIR"/skills/*/; do
   link_item "$d" "$CLAUDE_DIR/skills/$(basename "$d")"
 done
 
-echo "Done. Open any repo with Claude Code and run: /dev \"<task>\""
+echo "global memory:"
+link_item "$REPO_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
+
+echo "Done. Open any repo with Claude Code and run: /brief \"<idea>\" or /delegate \"<task>\""

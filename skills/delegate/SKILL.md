@@ -1,14 +1,14 @@
 ---
-name: dev
-description: Orchestrated dev workflow — hand over one task and role agents (scout, planner, implementer, reviewer, tester) execute it in parallel/sequence with quality gates. Use when the user gives a development task with /dev, or asks to "run the dev workflow" / "giao task" on a codebase.
-argument-hint: <task description>
+name: delegate
+description: Orchestrated dev workflow — hand over one task and role agents (scout, planner, implementer, reviewer, tester) execute it in parallel/sequence with quality gates. Use when the user delegates a development task with /delegate, or asks to "run the dev workflow" / "giao task" on a codebase. Accepts a pre-written plan file (e.g. produced by /brief).
+argument-hint: <task description | "implement plan at <path>">
 ---
 
-# /dev — orchestrated dev workflow
+# /delegate — orchestrated dev workflow
 
 You are the **orchestrator**. You do not implement complex tasks yourself — you triage, delegate to role agents, gate quality, and report. The role agents available (defined in `~/.claude/agents/`): `scout`, `planner`, `implementer`, `reviewer`, `tester`.
 
-The task is everything after `/dev`. If no task was given, ask for one and stop.
+The task is everything after `/delegate`. If no task was given, ask for one and stop. If the task references a plan file (a path, or output of `/brief`), read it — it is part of the task.
 
 ## Phase 0 — Triage (always, before any delegation)
 
@@ -18,7 +18,7 @@ Classify the task:
 - **STANDARD** — everything else that doesn't trip a COMPLEX criterion. → Run the full pipeline below without stopping for approval.
 - **COMPLEX** — ANY of: >3 files meaningfully changed · ambiguous requirements (two reasonable readings diverge) · schema/public API/dependency changes · hard-to-reverse ops (migrations, data deletion, production config, live tracking/payment IDs) · cross-cutting change (e.g. copy + tracking + data). → Full pipeline **with approval gates** (Phase 2 and Phase 6).
 
-If the request is too ambiguous to even triage, ask the user targeted questions first (use AskUserQuestion when available). One good question now beats a wrong plan later.
+If the request is too ambiguous to even triage, ask the user targeted questions first (use AskUserQuestion when available) — or suggest running `/brief` to shape it. One good question now beats a wrong plan later.
 
 Announce the triage in one line ("STANDARD — 2 independent subtasks, no approval gates") before proceeding.
 
@@ -26,17 +26,22 @@ Announce the triage in one line ("STANDARD — 2 independent subtasks, no approv
 
 Launch `scout` agent(s) with the task and repo path. One scout normally; 2–3 in parallel only when the task clearly spans distinct areas (e.g. frontend + data pipeline). Pass each scout the task verbatim plus which area to cover.
 
+**Greenfield:** if the target is a new/empty project, there is no code to scout. Instead, have the scout read the plan file and the environment: available runtimes and package managers (`php`, `composer`, `node`, `python` versions), the target directory's state, and — if the user has sibling repos — their conventions worth carrying over. Skip scouting entirely only if the plan already pins all of that down.
+
 ## Phase 2 — Plan
 
 Launch `planner` with the task + all scout briefings. It returns subtasks with **disjoint file ownership**, a verify plan, and a risk flag.
 
-**Approval gate:** if the planner says `NEEDS_APPROVAL`, or your triage said COMPLEX, present the plan to the user (approach, subtasks, files touched, risks) and **wait for approval** before writing any code. If the planner's risk flag disagrees with your triage, the stricter one wins.
+**User-supplied plan:** when the user provided a plan (via `/brief` output or their own document), the planner runs in **validate + decompose** mode — pass it the plan verbatim and instruct it to: (1) treat the plan's scope and decisions as fixed, (2) convert it into subtasks with disjoint file ownership, (3) list explicitly anything it disagrees with or finds missing, as `## Plan concerns`. It must NOT silently re-plan. If a concern would change scope or the outcome, surface it to the user before implementing; cosmetic concerns just go in the final report.
+
+**Approval gate:** if the planner says `NEEDS_APPROVAL`, or your triage said COMPLEX, present the plan to the user (approach, subtasks, files touched, risks) and **wait for approval** before writing any code. If the planner's risk flag disagrees with your triage, the stricter one wins. When the user already approved the same content via `/brief`, only the *decomposition* and any `## Plan concerns` need approval — don't re-ask what they already decided.
 
 Sanity-check the plan yourself: ownership sets actually disjoint, no invented files, verify commands real. Fix trivial plan defects yourself; re-run the planner only if the plan is structurally wrong.
 
 ## Phase 3 — Implement (parallel where the plan allows)
 
 - Launch one `implementer` per subtask. Subtasks with no mutual dependencies go **in a single message so they run concurrently**; dependent subtasks wait for their dependencies.
+- **Greenfield bootstrap is sequential:** scaffolding (e.g. `composer create-project`, `npm create`, directory skeleton, base config) must complete as its own subtask before any fan-out — every other subtask depends on it. Only parallelize after the skeleton exists.
 - Each implementer's prompt must contain: its subtask spec, its owned-files list, an explicit "do NOT touch" note about the other subtasks' files, and the relevant conventions/constraints from the scout briefing. Agents don't share your context — the prompt is all they get.
 - If an implementer reports it needs a file it doesn't own: stop that lane, re-plan the collision (merge subtasks or sequence them), continue.
 - If ownership genuinely can't be made disjoint, run those subtasks sequentially rather than resorting to worktree merges — merge conflicts cost more than they save at this scale.
@@ -55,7 +60,7 @@ When all implementers report done, launch `reviewer` and `tester` **in the same 
 
 ## Phase 6 — Deliver
 
-1. Write the summary FIRST: what changed (per file), checks run + results, issues found and fixed, anything out of scope noticed.
+1. Write the summary FIRST: what changed (per file), checks run + results, issues found and fixed, plan concerns raised, anything out of scope noticed.
 2. **Git rules:**
    - Work on a feature branch — never commit directly to main/master. Create one if needed.
    - SIMPLE/STANDARD + all green → commit with a clear message and push the branch.
