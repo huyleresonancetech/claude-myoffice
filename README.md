@@ -36,6 +36,15 @@ If the task is already clear, delegate directly and skip `/brief`:
 /delegate "add a new landing page segment, copy sourced from 01-segments/9-xxx.md"
 ```
 
+When the task arrives as BA docs (logic drawn in Figma), start `/brief` from the docs — `analyst` agents read them first, and the interview only covers the gaps they find:
+
+```
+/brief "docs from BA: ./exports/checkout-flow-*.png"   (or a Figma link)
+   → analysts extract screens, flows, business rules — and gaps/contradictions
+   → you resolve the gaps (or they become "Questions for BA" to forward)
+   → plan file; work blocked on BA answers is marked PENDING-BA and /delegate skips it
+```
+
 ### The /delegate pipeline
 
 ```
@@ -59,6 +68,7 @@ If the task is already clear, delegate directly and skip `/brief`:
 
 | Agent | Model | Access | Job |
 |---|---|---|---|
+| `analyst` | inherit (strongest) | read-only | Reads BA/design docs (Figma exports, PDFs), extracts requirements + gaps + questions for BA |
 | `scout` | haiku | read-only | Codebase reconnaissance, returns a briefing |
 | `planner` | inherit (strongest) | read-only | Plan + parallelizable subtask split, flags risk |
 | `implementer` | sonnet | edit | Executes exactly 1 subtask, only in its assigned files |
@@ -84,7 +94,7 @@ Hits none → runs straight through to push, report only.
 ```
 CLAUDE.md          # the brain: global persona + rules, symlinked → ~/.claude/CLAUDE.md
 agents/            # one .md per role (frontmatter: model, tools + system prompt)
-skills/brief/      # /brief — design a task with the user → plan file
+skills/brief/      # /brief — design a task with the user (+ BA doc intake) → plan file
 skills/delegate/   # /delegate — orchestration playbook
 setup.sh           # symlinks into ~/.claude/
 ```
@@ -105,3 +115,5 @@ setup.sh           # symlinks into ~/.claude/
 - Skill names describe the user's action (`/brief`, `/delegate`) rather than domain keywords (`/dev`, `/design`) — avoids collision/confusion with other skills.
 - The brain = main session + global `CLAUDE.md`, NOT an orchestrator subagent — a subagent can't converse with the user directly, so approval gates would break, and context degrades through the middleman.
 - Designing tasks with the user is a **skill** (main loop, conversational), not a subagent.
+- BA docs are never auto-converted to a plan: `analyst` extraction always passes through gap review with the user, because doc gaps caught before coding are the whole point. Unresolved gaps ship as "Questions for BA", and the blocked work is `PENDING-BA` — `/delegate` never implements it on a guess.
+- Figma comes in as exported images by default (zero setup); a Figma MCP server is an optional fidelity upgrade the skill auto-detects — same structure either way.

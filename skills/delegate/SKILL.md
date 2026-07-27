@@ -34,6 +34,8 @@ Launch `planner` with the task + all scout briefings. It returns subtasks with *
 
 **User-supplied plan:** when the user provided a plan (via `/brief` output or their own document), the planner runs in **validate + decompose** mode — pass it the plan verbatim and instruct it to: (1) treat the plan's scope and decisions as fixed, (2) convert it into subtasks with disjoint file ownership, (3) list explicitly anything it disagrees with or finds missing, as `## Plan concerns`. It must NOT silently re-plan. If a concern would change scope or the outcome, surface it to the user before implementing; cosmetic concerns just go in the final report.
 
+**Blocked items:** work the plan marks `PENDING-BA` (or otherwise blocked on an unanswered question) is excluded from subtasks — never implemented on a guess. List the exclusions and what each is waiting on in both the plan presentation and the final report.
+
 **Approval gate:** if the planner says `NEEDS_APPROVAL`, or your triage said COMPLEX, present the plan to the user (approach, subtasks, files touched, risks) and **wait for approval** before writing any code. If the planner's risk flag disagrees with your triage, the stricter one wins. When the user already approved the same content via `/brief`, only the *decomposition* and any `## Plan concerns` need approval — don't re-ask what they already decided.
 
 Sanity-check the plan yourself: ownership sets actually disjoint, no invented files, verify commands real. Fix trivial plan defects yourself; re-run the planner only if the plan is structurally wrong.

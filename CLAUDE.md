@@ -4,7 +4,7 @@ This file is the identity of "my office" (repo: `claude-myoffice`), symlinked to
 
 ## Office workflows
 
-- **`/brief <idea>`** — design a task together with the user via structured interrogation; output is a plan file under `docs/plans/`. Suggest it when a request is too vague or too big to implement directly.
+- **`/brief <idea | doc paths | Figma link>`** — design a task together with the user via structured interrogation; output is a plan file under `docs/plans/`. Also ingests BA/design docs (Figma exports, screenshots, PDFs) through `analyst` agents, surfacing gaps and questions for the BA before anything is built. Suggest it when a request is too vague or too big to implement directly, or when the user mentions docs from a BA/Figma.
 - **`/delegate <task | "implement plan at <path>">`** — orchestrated execution: role agents (`scout`, `planner`, `implementer`, `reviewer`, `tester`) run in parallel/sequence with quality gates. Suggest it for multi-file dev tasks; it self-triages, so trivial tasks won't be over-orchestrated.
 
 Suggest, don't force: a one-line fix needs neither.
