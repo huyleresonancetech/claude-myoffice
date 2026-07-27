@@ -4,12 +4,23 @@ Personal command center for Claude Code — the "brain" holding the operating pe
 
 ## Install (once per machine)
 
+**macOS / Linux:**
+
 ```bash
 git clone https://github.com/huyleresonancetech/claude-myoffice.git ~/claude-myoffice
 ~/claude-myoffice/setup.sh
 ```
 
-The script only creates **symlinks** from `~/.claude/` back into the repo — it never overwrites existing config (foreign files are SKIPped and reported). Updating later is just `git pull`. Three things get linked:
+**Windows** (PowerShell — do NOT run `setup.sh` via Git Bash; MSYS fakes `ln -s` as a copy, which silently breaks pull-to-update):
+
+```powershell
+git clone https://github.com/huyleresonancetech/claude-myoffice.git $env:USERPROFILE\claude-myoffice
+powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\claude-myoffice\setup.ps1
+```
+
+Directories are linked as junctions (no special rights). File links (agents, CLAUDE.md) are symlinks, which on Windows require **Developer Mode** (Settings → System → For developers) or an elevated PowerShell — enable one of the two if the script reports FAIL lines, then re-run.
+
+The scripts only create **links** from `~/.claude/` back into the repo — they never overwrite existing config (foreign files are SKIPped and reported). Updating later is just `git pull`. Three things get linked:
 
 | Source | Target | Role |
 |---|---|---|
@@ -96,7 +107,8 @@ CLAUDE.md          # the brain: global persona + rules, symlinked → ~/.claude/
 agents/            # one .md per role (frontmatter: model, tools + system prompt)
 skills/brief/      # /brief — design a task with the user (+ BA doc intake) → plan file
 skills/delegate/   # /delegate — orchestration playbook
-setup.sh           # symlinks into ~/.claude/
+setup.sh           # installer, macOS/Linux (symlinks into ~/.claude/)
+setup.ps1          # installer, Windows (junctions + symlinks into %USERPROFILE%\.claude)
 ```
 
 ## Extending
