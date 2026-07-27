@@ -1,107 +1,107 @@
 # claude-myoffice
 
-Trung tâm điều hành cá nhân cho Claude Code — "bộ não" chứa persona điều hành, các agent vai trò và workflow điều phối, dùng chung cho **mọi repo** trên máy local. Sửa một nơi, mọi dự án hưởng.
+Personal command center for Claude Code — the "brain" holding the operating persona, role agents, and orchestration workflows, shared across **every repo** on the machine. Edit in one place, every project inherits.
 
-## Cài đặt (1 lần / máy)
+## Install (once per machine)
 
 ```bash
 git clone https://github.com/huyleresonancetech/claude-myoffice.git ~/claude-myoffice
 ~/claude-myoffice/setup.sh
 ```
 
-Script chỉ tạo **symlink** từ `~/.claude/` trỏ về repo — không ghi đè config sẵn có (file lạ sẽ được SKIP và báo). Update sau này chỉ cần `git pull`. Ba thứ được link:
+The script only creates **symlinks** from `~/.claude/` back into the repo — it never overwrites existing config (foreign files are SKIPped and reported). Updating later is just `git pull`. Three things get linked:
 
-| Nguồn | Đích | Vai trò |
+| Source | Target | Role |
 |---|---|---|
-| `CLAUDE.md` | `~/.claude/CLAUDE.md` | Bộ não: persona điều hành + quy tắc chung, nạp ở **mọi session, mọi repo** |
-| `agents/*.md` | `~/.claude/agents/` | Đội agent vai trò |
-| `skills/*/` | `~/.claude/skills/` | Các workflow (`/brief`, `/delegate`) |
+| `CLAUDE.md` | `~/.claude/CLAUDE.md` | The brain: operating persona + global rules, loaded in **every session, every repo** |
+| `agents/*.md` | `~/.claude/agents/` | The role-agent team |
+| `skills/*/` | `~/.claude/skills/` | The workflows (`/brief`, `/delegate`) |
 
-## Dùng
+## Usage
 
-Quy trình đầy đủ là 2 bước — thiết kế task cùng nhau, rồi giao cho đội chạy:
-
-```
-/brief "backend Laravel cho pawcast"
-   → phỏng vấn có cấu trúc: goal, definition of done, scope In/Out, constraints, verify
-   → xuất file plan: docs/plans/2026-07-26-pawcast-backend.md
-
-/delegate "implement plan tại docs/plans/2026-07-26-pawcast-backend.md"
-   → pipeline chạy plan đó (planner chỉ validate + decompose, không tự nghĩ lại)
-```
-
-Task đã rõ sẵn thì giao thẳng, bỏ qua `/brief`:
+The full flow is two steps — design the task together, then hand it to the team:
 
 ```
-/delegate "thêm segment mới cho landing page, copy lấy từ 01-segments/9-xxx.md"
+/brief "Laravel backend for pawcast"
+   → structured interview: goal, definition of done, scope In/Out, constraints, verify
+   → outputs a plan file: docs/plans/2026-07-26-pawcast-backend.md
+
+/delegate "implement plan at docs/plans/2026-07-26-pawcast-backend.md"
+   → the pipeline executes that plan (planner only validates + decomposes, never re-plans)
 ```
 
-### Pipeline của /delegate
+If the task is already clear, delegate directly and skip `/brief`:
+
+```
+/delegate "add a new landing page segment, copy sourced from 01-segments/9-xxx.md"
+```
+
+### The /delegate pipeline
 
 ```
 /delegate "<task | plan file>"
-  ├─ Triage ── SIMPLE → làm thẳng, không orchestrate (nhanh hơn)
-  ├─ [1] scout        song song, read-only — hiểu code liên quan
-  │        └─ greenfield → đọc plan + môi trường thay vì code
-  ├─ [2] planner      chia subtask độc lập, file ownership rời nhau
-  │        ├─ plan có sẵn → validate + decompose, bất đồng phải nêu rõ
-  │        └─ COMPLEX → ⏸ trình plan, chờ duyệt
-  ├─ [3] implementer  N agent song song, mỗi agent 1 subtask
-  │        └─ greenfield → subtask scaffold chạy tuần tự TRƯỚC khi fan-out
-  ├─ [4] reviewer ∥ tester   review adversarial + chạy build/lint/test
-  ├─ [5] fix loop     (tối đa 3 vòng, không bao giờ nới lỏng check)
-  └─ [6] deliver      báo cáo → commit → push
-           └─ COMPLEX → ⏸ trình diff, chờ duyệt trước khi push
-           └─ KHÔNG BAO GIỜ tự tạo PR khi chưa được confirm
+  ├─ Triage ── SIMPLE → do it directly, no orchestration (faster)
+  ├─ [1] scout        parallel, read-only — understand the relevant code
+  │        └─ greenfield → reads the plan + environment instead of code
+  ├─ [2] planner      splits into independent subtasks, disjoint file ownership
+  │        ├─ plan provided → validate + decompose, disagreements surfaced explicitly
+  │        └─ COMPLEX → ⏸ present plan, wait for approval
+  ├─ [3] implementer  N agents in parallel, one subtask each
+  │        └─ greenfield → scaffold subtask runs sequentially BEFORE fan-out
+  ├─ [4] reviewer ∥ tester   adversarial review + run build/lint/tests
+  ├─ [5] fix loop     (max 3 rounds, checks are never weakened)
+  └─ [6] deliver      report → commit → push
+           └─ COMPLEX → ⏸ present diff, wait for approval before push
+           └─ NEVER creates a PR without explicit confirmation
 ```
 
-### Vai trò
+### Roles
 
-| Agent | Model | Quyền | Việc |
+| Agent | Model | Access | Job |
 |---|---|---|---|
-| `scout` | haiku | read-only | Trinh sát codebase, trả về briefing |
-| `planner` | inherit (mạnh nhất) | read-only | Plan + chia subtask song song được, cắm cờ rủi ro |
-| `implementer` | sonnet | edit | Thực thi đúng 1 subtask, trong đúng file được giao |
-| `reviewer` | inherit (mạnh nhất) | read-only | Soi lỗi thật trên diff, verdict APPROVE/NEEDS_FIXES |
-| `tester` | sonnet | bash + viết test | Tự tìm và chạy check của repo, verdict GREEN/RED |
+| `scout` | haiku | read-only | Codebase reconnaissance, returns a briefing |
+| `planner` | inherit (strongest) | read-only | Plan + parallelizable subtask split, flags risk |
+| `implementer` | sonnet | edit | Executes exactly 1 subtask, only in its assigned files |
+| `reviewer` | inherit (strongest) | read-only | Hunts real defects in the diff, verdict APPROVE/NEEDS_FIXES |
+| `tester` | sonnet | bash + write tests | Discovers and runs the repo's checks, verdict GREEN/RED |
 
-Bộ não điều hành **không phải một agent riêng** — chính main session (Claude bạn đang chat) đọc SKILL.md và trở thành orchestrator. Nhờ vậy các gate duyệt plan/diff hỏi thẳng bạn được, không qua trung gian.
+The orchestrating brain is **not a separate agent** — the main session (the Claude you're chatting with) reads the SKILL.md and becomes the orchestrator. That's what lets the plan/diff approval gates talk to you directly, with no intermediary.
 
-### Gate duyệt (khi nào nó dừng lại hỏi)
+### Approval gates (when it stops to ask)
 
-Task bị coi là **COMPLEX** — phải duyệt plan trước khi code và duyệt diff trước khi push — khi chạm ≥1 tiêu chí:
+A task is treated as **COMPLEX** — plan approved before coding, diff approved before pushing — when it hits ≥1 criterion:
 
-- đụng >3 file có ý nghĩa
-- yêu cầu mơ hồ (2 cách hiểu hợp lý cho ra kết quả khác nhau)
-- đổi schema / public API / dependency
-- thao tác khó đảo ngược: migration, xóa data, config production, tracking/payment ID live
-- thay đổi xuyên nhiều bề mặt (vd: copy + tracking + data)
+- meaningfully changes >3 files
+- ambiguous requirements (two reasonable readings diverge)
+- schema / public API / dependency changes
+- hard-to-reverse operations: migrations, data deletion, production config, live tracking/payment IDs
+- cross-cutting change (e.g. copy + tracking + data)
 
-Không chạm tiêu chí nào → chạy thẳng tới push, chỉ báo cáo.
+Hits none → runs straight through to push, report only.
 
-## Cấu trúc repo
+## Repo layout
 
 ```
-CLAUDE.md          # bộ não: persona + quy tắc global, symlink → ~/.claude/CLAUDE.md
-agents/            # mỗi file .md = 1 vai trò (frontmatter: model, tools + system prompt)
-skills/brief/      # /brief — thiết kế task cùng user → file plan
-skills/delegate/   # /delegate — playbook điều phối
-setup.sh           # symlink vào ~/.claude/
+CLAUDE.md          # the brain: global persona + rules, symlinked → ~/.claude/CLAUDE.md
+agents/            # one .md per role (frontmatter: model, tools + system prompt)
+skills/brief/      # /brief — design a task with the user → plan file
+skills/delegate/   # /delegate — orchestration playbook
+setup.sh           # symlinks into ~/.claude/
 ```
 
-## Mở rộng
+## Extending
 
-- **Thêm vai trò**: tạo `agents/<tên>.md` (bắt chước format file sẵn có), chạy lại `setup.sh`, nhắc đến nó trong `skills/delegate/SKILL.md` nếu muốn pipeline dùng.
-- **Thêm workflow**: tạo `skills/<tên>/SKILL.md`, chạy lại `setup.sh` → có ngay lệnh `/<tên>`.
-- **Chỉnh gate/model**: sửa trực tiếp `skills/delegate/SKILL.md` (tiêu chí COMPLEX) hoặc frontmatter `model:` trong từng agent.
-- **Ghi quy tắc mới**: quyết định bền vững → thêm vào `CLAUDE.md` (global) hoặc skill liên quan, commit lại.
+- **Add a role**: create `agents/<name>.md` (mirror the format of existing files), re-run `setup.sh`, and mention it in `skills/delegate/SKILL.md` if the pipeline should use it.
+- **Add a workflow**: create `skills/<name>/SKILL.md`, re-run `setup.sh` → the `/<name>` command exists immediately.
+- **Tune gates/models**: edit `skills/delegate/SKILL.md` directly (COMPLEX criteria) or the `model:` frontmatter in each agent.
+- **Record new rules**: durable decisions go into `CLAUDE.md` (global) or the relevant skill, then commit.
 
-## Quyết định thiết kế đã chốt (2026-07-26)
+## Locked design decisions (2026-07-26)
 
-- Tối giản thay vì port gstack: 5 vai trò + 2 skill tái tạo đủ 3 nguyên tắc lõi (role cụ thể, artifact chuyền tay, quality gate) — không ôm 23 skill.
-- Symlink thay vì copy: một nguồn sự thật, `git pull` là xong.
-- Model phân tầng: rẻ-nhanh cho trinh sát/chạy test, mạnh nhất cho plan/review — nơi sai lầm đắt nhất.
-- Task SIMPLE đi thẳng không qua pipeline: orchestration có chi phí, chỉ đáng khi task chia được.
-- Tên skill theo hành động của user (`/brief`, `/delegate`) thay vì từ khóa lĩnh vực (`/dev`, `/design`) — tránh trùng/nhầm với skill khác.
-- Bộ não = main session + `CLAUDE.md` global, KHÔNG phải orchestrator subagent — subagent không hội thoại trực tiếp với user nên gate duyệt sẽ gãy, và mất context qua trung gian.
-- Thiết kế task cùng user là **skill** (main loop, hội thoại được), không phải subagent.
+- Minimal instead of porting gstack: 5 roles + 2 skills reproduce the 3 core principles (specific roles, artifacts handed downstream, quality gates) — without adopting 23 skills.
+- Symlink over copy: one source of truth, `git pull` is the whole update.
+- Tiered models: cheap-fast for recon/test-running, strongest for plan/review — where mistakes are most expensive.
+- SIMPLE tasks bypass the pipeline entirely: orchestration has overhead, only worth it when the task splits.
+- Skill names describe the user's action (`/brief`, `/delegate`) rather than domain keywords (`/dev`, `/design`) — avoids collision/confusion with other skills.
+- The brain = main session + global `CLAUDE.md`, NOT an orchestrator subagent — a subagent can't converse with the user directly, so approval gates would break, and context degrades through the middleman.
+- Designing tasks with the user is a **skill** (main loop, conversational), not a subagent.
