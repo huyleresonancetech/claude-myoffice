@@ -43,4 +43,11 @@ done
 echo "global memory:"
 link_item "$REPO_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
 
+echo "office-viz hooks:"
+if command -v node >/dev/null 2>&1; then
+  node "$REPO_DIR/office-viz/install-hooks.js" 2>&1 | sed 's/^/  /' || true
+else
+  echo "  SKIP    node not found - install Node.js and re-run to enable office-viz hooks"
+fi
+
 echo "Done. Open any repo with Claude Code and run: /brief \"<idea>\" or /delegate \"<task>\""

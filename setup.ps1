@@ -57,6 +57,14 @@ Get-ChildItem (Join-Path $RepoDir 'skills') -Directory | ForEach-Object {
 Write-Host "global memory:"
 Link-Item (Join-Path $RepoDir 'CLAUDE.md') (Join-Path $ClaudeDir 'CLAUDE.md')
 
+Write-Host "office-viz hooks:"
+if (Get-Command node -ErrorAction SilentlyContinue) {
+    $installHooks = Join-Path $RepoDir 'office-viz\install-hooks.js'
+    & node $installHooks | ForEach-Object { Write-Host "  $_" }
+} else {
+    Write-Host "  SKIP    node not found - install Node.js and re-run to enable office-viz hooks"
+}
+
 if ($script:Failed) {
     Write-Host "Some links FAILED - fix the cause above and re-run. Already-created links are fine."
     exit 1

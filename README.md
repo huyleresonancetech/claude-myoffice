@@ -118,6 +118,36 @@ setup.ps1          # installer, Windows (junctions + symlinks into %USERPROFILE%
 - **Tune gates/models**: edit `skills/delegate/SKILL.md` directly (COMPLEX criteria) or the `model:` frontmatter in each agent.
 - **Record new rules**: durable decisions go into `CLAUDE.md` (global) or the relevant skill, then commit.
 
+## Office Viz
+
+A pixel-art office that visualizes `/delegate` runs live — sessions walk in as
+little sprites, sit at desks by role (scout, planner, implementer, reviewer,
+tester, analyst), and show a speech bubble for whatever they're doing (`Edit
+foo.ts`, `Bash npm test`, …). A companion dashboard turns the same event log
+into metrics: throughput over time, phase/time breakdown per run, findings
+and fix-loop quality, and token cost per day/role/repo.
+
+### Quick start
+
+1. Install the hooks once per machine (done by `setup.ps1` / `setup.sh`, or
+   run `node office-viz/install-hooks.js` directly) — this wires Claude Code's
+   `SessionStart`/`SessionEnd`/`PreToolUse`/`PostToolUse`/`SubagentStop`/`Stop`
+   hooks to `office-viz/emit.js`, which appends JSONL events under
+   `~/.claude/office-state/` (or `$CLAUDE_CONFIG_DIR/office-state/`).
+2. Start the collector/server:
+   ```bash
+   cd office-viz && npm start
+   ```
+3. Open `http://localhost:4517` for the pixel office, or
+   `http://localhost:4517/dashboard.html` for the metrics dashboard.
+
+No hooks installed yet, or just want to see it move? Append `?demo` to either
+URL (`http://localhost:4517/?demo`, `.../dashboard.html?demo`) for a scripted
+preview that needs no server, no hooks, no real data.
+
+Art is hand-drawn pixel tiles and sprites, CC0 — the LimeZu asset packs that
+inspired the look are **not** included or required.
+
 ## Locked design decisions (2026-07-26)
 
 - Minimal instead of porting gstack: 5 roles + 2 skills reproduce the 3 core principles (specific roles, artifacts handed downstream, quality gates) — without adopting 23 skills.

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Office Viz</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #0b0c10;
+    color: #d7dae0;
+    font-family: system-ui, sans-serif;
+    overflow: hidden;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 44px;
+    padding: 0 12px;
+    background: #14151b;
+    border-bottom: 1px solid #262832;
+  }
+  header h1 {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    margin: 0;
+    color: #e8eaf0;
+  }
+  #status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #9aa0ac;
+  }
+  .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #4a4e5a;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+  }
+  .dot.connected { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+  .dot.disconnected { background: #e05252; box-shadow: 0 0 6px #e05252; }
+  header a {
+    margin-left: auto;
+    color: #8fb3ff;
+    text-decoration: none;
+    font-size: 13px;
+  }
+  header a:hover { text-decoration: underline; }
+  #stage {
+    position: relative;
+    width: 100%;
+    height: calc(100% - 44px);
+    background: #0b0c10;
+    overflow: hidden;
+  }
+  #scene {
+    position: absolute;
+    top: 0;
+    left: 0;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+  }
+  #hud {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .run-panel {
+    background: rgba(20, 21, 27, 0.9);
+    border: 1px solid #2c2e38;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 11px;
+    line-height: 1.5;
+    min-width: 180px;
+  }
+  .run-panel .repo {
+    font-weight: 600;
+    color: #e8eaf0;
+    margin-bottom: 2px;
+  }
+  .run-panel .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: #9aa0ac;
+  }
+  .sev { font-weight: 600; }
+  .sev.blocker { color: #e05252; }
+  .sev.major { color: #e0a552; }
+  .sev.minor { color: #7fb3e0; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Office Viz</h1>
+    <div id="status">
+      <span id="statusDot" class="dot disconnected"></span>
+      <span id="statusText">connecting&hellip;</span>
+    </div>
+    <a href="dashboard.html">Dashboard</a>
+  </header>
+  <main id="stage">
+    <canvas id="scene"></canvas>
+    <div id="hud"></div>
+  </main>
+  <script src="office.js"></script>
+</body>
+</html>
