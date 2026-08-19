@@ -58,7 +58,11 @@ function buildEvent(payload, path, schema) {
 
   switch (hookEvent) {
     case 'SessionStart':
-      return { ...envelope(payload), event: schema.EVENT_TYPES.SESSION_START };
+      return {
+        ...envelope(payload),
+        event: schema.EVENT_TYPES.SESSION_START,
+        ...transcriptPathField(payload),
+      };
 
     case 'SessionEnd':
       return { ...envelope(payload), event: schema.EVENT_TYPES.SESSION_END };
@@ -105,7 +109,14 @@ function buildAgentStart(payload, schema) {
     event: schema.EVENT_TYPES.AGENT_START,
     role,
     label: input.description,
+    ...transcriptPathField(payload),
   };
+}
+
+// Omit the field entirely (rather than writing null) when the hook payload has no
+// transcript_path, so consumers can tell "unknown" apart from "explicitly absent".
+function transcriptPathField(payload) {
+  return payload.transcript_path ? { transcriptPath: payload.transcript_path } : {};
 }
 
 function buildAgentActivity(payload, path, schema) {

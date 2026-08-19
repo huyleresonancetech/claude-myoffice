@@ -10,9 +10,10 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const schema = require('./schema.js');
-const { createTailer, listAllEvents } = require('./lib/tail.js');
-const { createWorld, applyEvent, toState, expireStale } = require('./lib/world.js');
+const { createTailer, listAllEvents, tailFile, consumedOffset } = require('./lib/tail.js');
+const { createWorld, applyEvent, toState, expireStale, getSession } = require('./lib/world.js');
 const { aggregateHistory } = require('./lib/aggregate.js');
+const { parseLogLine, readLogTail } = require('./lib/transcript.js');
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.OFFICE_VIZ_PORT) || 4517;
@@ -117,6 +118,54 @@ function serveEvents(req, res) {
   res.on('close', cleanup);
 }
 
+// --- agent console log stream -------------------------------------------------
+
+function serveLog(req, res, sessionId) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+
+  let fileTailer = null;
+  const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), HEARTBEAT_MS);
+
+  function cleanup() {
+    clearInterval(heartbeat);
+    if (fileTailer) fileTailer.stop();
+  }
+  req.on('close', cleanup);
+  res.on('close', cleanup);
+
+  const session = sessionId ? getSession(world, sessionId) : null;
+  const transcriptPath = session && session.transcriptPath;
+
+  // transcriptPath is our own hook-emitted data, not user input — the
+  // extension check is a cheap sanity guard, not a security boundary.
+  if (!transcriptPath || !transcriptPath.endsWith('.jsonl')) {
+    res.write('event: log\ndata: []\n\n');
+    return; // connection stays open — heartbeats only, client shows "no transcript"
+  }
+
+  // Pin the resume offset *before* reading the burst: the file only grows,
+  // so a pre-read offset can never be ahead of what the burst read actually
+  // saw (no lost appends), it always lands on a real line boundary (no
+  // mid-line garbage on the first pump), and starting from statSync().size
+  // *after* the read would leave a window where appends are silently missed.
+  const offset = consumedOffset(transcriptPath);
+  res.write(`event: log\ndata: ${JSON.stringify(readLogTail(transcriptPath, 200))}\n\n`);
+
+  fileTailer = tailFile(
+    transcriptPath,
+    (lines) => {
+      const entries = [];
+      for (const line of lines) entries.push(...parseLogLine(line));
+      if (entries.length) res.write(`event: log\ndata: ${JSON.stringify(entries)}\n\n`);
+    },
+    { startOffset: offset }
+  );
+}
+
 // --- history API -------------------------------------------------------------
 
 function serveHistory(res) {
@@ -129,7 +178,23 @@ function serveHistory(res) {
 // --- routing -----------------------------------------------------------------
 
 const server = http.createServer((req, res) => {
-  const urlPath = req.url.split('?')[0];
+  const rawUrl = req.url || '';
+  // A well-formed request-target starts with exactly one '/'. Node's HTTP
+  // parser passes oddities like "//[" straight through, and new URL() on
+  // that throws (host "[") — reject before it ever reaches the constructor.
+  if (rawUrl[0] !== '/' || rawUrl[1] === '/') {
+    notFound(res);
+    return;
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(rawUrl, `http://${HOST}`);
+  } catch {
+    notFound(res);
+    return;
+  }
+  const urlPath = parsedUrl.pathname;
 
   if (req.method !== 'GET') {
     notFound(res);
@@ -137,6 +202,10 @@ const server = http.createServer((req, res) => {
   }
   if (urlPath === '/events') {
     serveEvents(req, res);
+    return;
+  }
+  if (urlPath === '/api/log') {
+    serveLog(req, res, parsedUrl.searchParams.get('session'));
     return;
   }
   if (urlPath === '/api/history') {

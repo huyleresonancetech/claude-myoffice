@@ -34,15 +34,21 @@
     v: { fill: '#233021' },
   };
 
+  const CONSOLE_MAX_ENTRIES = 500;
+  const AVATAR_HIT_RADIUS = 12;
+
   let canvas, ctx, hudEl, statusDot, statusText, stageEl;
+  let consoleEl, consoleTitleEl, consoleBodyEl, consoleDotEl, consoleStatusTextEl, consoleCloseBtn, consoleJumpBtn;
   let map = null;
   let scale = 1;
   let connected = false;
 
-  // sessionId -> { cwd, run, agents: Map<agentKey, agentRender>, idle: agentRender|null }
+  // sessionId -> { cwd, run, transcriptPath, agents: Map<agentKey, agentRender>, idle: agentRender|null }
   const sessions = new Map();
   const dustPuffs = [];
   const hudPanels = new Map(); // sessionId -> DOM element
+
+  const consoleState = { sessionId: null, es: null, demoTimer: null, entries: [], atBottom: true };
 
   // Desk/seat assignment pools, keyed by role name (plus "lounge_idle" for idle sessions).
   const pools = {};
@@ -168,6 +174,7 @@
       const raw = state.sessions[sessionId];
       const s = ensureSession(sessionId, raw);
       s.run = raw.run || null;
+      s.transcriptPath = raw.transcriptPath || null;
 
       const incomingAgentKeys = new Set(Object.keys(raw.agents || {}));
 
@@ -214,6 +221,7 @@
     sessions.delete(sessionId);
     const panel = hudPanels.get(sessionId);
     if (panel) { panel.remove(); hudPanels.delete(sessionId); }
+    if (consoleState.sessionId === sessionId) closeConsole();
   }
 
   // --- per-frame update ---------------------------------------------------
@@ -382,6 +390,7 @@
       if (!panel) {
         panel = document.createElement('div');
         panel.className = 'run-panel';
+        panel.addEventListener('click', () => openConsole(sessionId));
         hudEl.appendChild(panel);
         hudPanels.set(sessionId, panel);
       }
@@ -401,6 +410,210 @@
     for (const [sessionId, panel] of Array.from(hudPanels.entries())) {
       if (!active.has(sessionId)) { panel.remove(); hudPanels.delete(sessionId); }
     }
+  }
+
+  // --- agent console -----------------------------------------------------
+
+  function shortId(sessionId) {
+    return sessionId.length > 8 ? sessionId.slice(0, 8) + '…' : sessionId;
+  }
+
+  function findSessionAt(wx, wy) {
+    let best = null;
+    let bestDist = AVATAR_HIT_RADIUS;
+    for (const [sessionId, s] of sessions.entries()) {
+      const renders = s.idle ? [s.idle] : Array.from(s.agents.values());
+      for (const render of renders) {
+        const pos = currentPos(render.mover);
+        const cx = pos.x * map.tileSize + 8;
+        const cy = pos.y * map.tileSize + 8;
+        const d = Math.hypot(wx - cx, wy - cy);
+        if (d <= bestDist) { bestDist = d; best = sessionId; }
+      }
+    }
+    return best;
+  }
+
+  function onCanvasClick(e) {
+    if (!map) return;
+    const rect = canvas.getBoundingClientRect();
+    const wx = (e.clientX - rect.left) / scale;
+    const wy = (e.clientY - rect.top) / scale;
+    const sessionId = findSessionAt(wx, wy);
+    if (sessionId) openConsole(sessionId);
+  }
+
+  function setConsoleConnected(v) {
+    consoleDotEl.classList.toggle('connected', v);
+    consoleDotEl.classList.toggle('disconnected', !v);
+    consoleStatusTextEl.textContent = v ? 'live' : 'disconnected';
+  }
+
+  function formatLogTime(ts) {
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '--:--:--';
+    const p = (n) => String(n).padStart(2, '0');
+    return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+
+  function truncateText(text, n) {
+    const t = text || '';
+    return t.length > n ? t.slice(0, n) + '…' : t;
+  }
+
+  function buildLogLine(entry) {
+    const line = document.createElement('div');
+    line.className = 'log-line kind-' + entry.kind;
+
+    const time = document.createElement('span');
+    time.className = 'log-time';
+    time.textContent = formatLogTime(entry.ts);
+    line.appendChild(time);
+
+    if (entry.sidechain) {
+      const marker = document.createElement('span');
+      marker.className = 'log-sidechain';
+      marker.textContent = '▸';
+      marker.title = 'subagent activity';
+      line.appendChild(marker);
+    }
+
+    const content = document.createElement('span');
+    content.className = 'log-content';
+    if (entry.kind === 'tool_use') {
+      const tool = entry.tool || {};
+      content.textContent = (tool.name || 'tool') + (tool.target ? ' ' + tool.target : '');
+    } else if (entry.kind === 'tool_result') {
+      content.textContent = truncateText(entry.text, 200);
+    } else if (entry.kind === 'user') {
+      content.textContent = '> ' + (entry.text || '');
+    } else if (entry.kind === 'thinking') {
+      content.textContent = '· ' + (entry.text || '');
+    } else {
+      content.textContent = entry.text || '';
+    }
+    line.appendChild(content);
+    return line;
+  }
+
+  function scrollConsoleToBottom() {
+    consoleBodyEl.scrollTop = consoleBodyEl.scrollHeight;
+    consoleState.atBottom = true;
+    consoleJumpBtn.classList.add('hidden');
+  }
+
+  function onConsoleScroll() {
+    const threshold = 24;
+    consoleState.atBottom =
+      consoleBodyEl.scrollTop + consoleBodyEl.clientHeight >= consoleBodyEl.scrollHeight - threshold;
+    if (consoleState.atBottom) consoleJumpBtn.classList.add('hidden');
+  }
+
+  function appendConsoleEntry(entry) {
+    consoleState.entries.push(entry);
+    consoleBodyEl.appendChild(buildLogLine(entry));
+    while (consoleState.entries.length > CONSOLE_MAX_ENTRIES) {
+      consoleState.entries.shift();
+      const first = consoleBodyEl.firstChild;
+      if (first) consoleBodyEl.removeChild(first);
+    }
+    if (consoleState.atBottom) scrollConsoleToBottom();
+    else consoleJumpBtn.classList.remove('hidden');
+  }
+
+  function appendConsoleNotice(text) {
+    const line = document.createElement('div');
+    line.className = 'log-line log-notice';
+    line.textContent = text;
+    consoleBodyEl.appendChild(line);
+  }
+
+  function clearConsoleEntries() {
+    consoleState.entries = [];
+    consoleBodyEl.innerHTML = '';
+    consoleState.atBottom = true;
+    consoleJumpBtn.classList.add('hidden');
+  }
+
+  function closeConsoleStream() {
+    if (consoleState.es) { consoleState.es.close(); consoleState.es = null; }
+    if (consoleState.demoTimer) { clearTimeout(consoleState.demoTimer); consoleState.demoTimer = null; }
+  }
+
+  function connectConsoleStream(sessionId) {
+    const es = new EventSource('/api/log?session=' + encodeURIComponent(sessionId));
+    consoleState.es = es;
+    // Every open (including auto-reconnect and post-compaction reconnects) is followed by
+    // a fresh ~200-entry burst from the server, so the client must drop stale entries first
+    // or the reconnect burst renders duplicated below the pre-reconnect lines.
+    es.addEventListener('open', () => {
+      clearConsoleEntries();
+      setConsoleConnected(true);
+    });
+    es.addEventListener('error', () => setConsoleConnected(false));
+    es.addEventListener('log', (e) => {
+      setConsoleConnected(true);
+      try {
+        const batch = JSON.parse(e.data);
+        if (Array.isArray(batch)) batch.forEach(appendConsoleEntry);
+      } catch (err) {
+        // malformed log payload from the server; skip this batch
+      }
+    });
+  }
+
+  const DEMO_LOG_SCRIPT = [
+    { kind: 'thinking', text: 'Reviewing the task description...' },
+    { kind: 'text', text: 'Starting exploration of the auth module.' },
+    { kind: 'tool_use', tool: { name: 'Bash', target: 'grep -r auth src/' } },
+    { kind: 'tool_result', text: 'src/auth/login.ts\nsrc/auth/session.ts\nsrc/auth/index.ts' },
+    { kind: 'thinking', text: 'Login flow looks straightforward, checking session handling next.' },
+    { kind: 'tool_use', tool: { name: 'Edit', target: 'LoginForm.tsx' }, sidechain: true },
+    { kind: 'text', text: 'Updated the login form validation.' },
+    { kind: 'user', text: 'Please also add a test for the empty-password case.' },
+    { kind: 'tool_use', tool: { name: 'Write', target: 'LoginForm.test.tsx' }, sidechain: true },
+    { kind: 'text', text: 'Added the missing test case.' },
+  ];
+
+  function startConsoleDemo() {
+    setConsoleConnected(true);
+    let i = 0;
+    function tick() {
+      if (consoleState.sessionId == null) return;
+      const item = DEMO_LOG_SCRIPT[i % DEMO_LOG_SCRIPT.length];
+      appendConsoleEntry(Object.assign({ ts: new Date().toISOString(), sidechain: false }, item));
+      i++;
+      consoleState.demoTimer = setTimeout(tick, 900);
+    }
+    tick();
+  }
+
+  function openConsole(sessionId) {
+    if (consoleState.sessionId === sessionId) return;
+    closeConsoleStream();
+    consoleState.sessionId = sessionId;
+    clearConsoleEntries();
+
+    const s = sessions.get(sessionId);
+    consoleTitleEl.textContent = repoName(s ? s.cwd : '') + ' · ' + shortId(sessionId);
+    consoleEl.classList.remove('hidden');
+    setConsoleConnected(false);
+
+    if (location.search.indexOf('demo') !== -1) {
+      startConsoleDemo();
+      return;
+    }
+    if (!s || !s.transcriptPath) {
+      appendConsoleNotice('no transcript available');
+      return;
+    }
+    connectConsoleStream(sessionId);
+  }
+
+  function closeConsole() {
+    closeConsoleStream();
+    consoleState.sessionId = null;
+    consoleEl.classList.add('hidden');
   }
 
   // --- transport -------------------------------------------------------------
@@ -550,8 +763,22 @@
     statusDot = document.getElementById('statusDot');
     statusText = document.getElementById('statusText');
     stageEl = document.getElementById('stage');
+    consoleEl = document.getElementById('console');
+    consoleTitleEl = document.getElementById('consoleTitle');
+    consoleBodyEl = document.getElementById('consoleBody');
+    consoleDotEl = document.getElementById('consoleDot');
+    consoleStatusTextEl = document.getElementById('consoleStatusText');
+    consoleCloseBtn = document.getElementById('consoleClose');
+    consoleJumpBtn = document.getElementById('consoleJump');
 
     window.addEventListener('resize', resize);
+    canvas.addEventListener('click', onCanvasClick);
+    consoleCloseBtn.addEventListener('click', closeConsole);
+    consoleJumpBtn.addEventListener('click', scrollConsoleToBottom);
+    consoleBodyEl.addEventListener('scroll', onConsoleScroll);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeConsole();
+    });
 
     fetch('map.json')
       .then((r) => r.json())

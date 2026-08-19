@@ -36,6 +36,7 @@ function ensureSession(world, sessionId, event) {
       cwd: event.cwd,
       startedAt: event.ts,
       lastSeen: event.ts,
+      transcriptPath: null,
       agents: {},
       run: null,
       _agentSeq: 0,
@@ -65,7 +66,9 @@ function mostRecentAgentKey(session) {
 
 function handleSessionStart(world, event) {
   if (!event.sessionId) return;
-  ensureSession(world, event.sessionId, event);
+  const session = ensureSession(world, event.sessionId, event);
+  // session_start is the authoritative source for the main transcript path.
+  if (event.transcriptPath) session.transcriptPath = event.transcriptPath;
 }
 
 function handleSessionEnd(world, event) {
@@ -76,6 +79,9 @@ function handleSessionEnd(world, event) {
 function handleAgentStart(world, event) {
   if (!event.sessionId) return;
   const session = ensureSession(world, event.sessionId, event);
+  // Fallback only: session_start's transcriptPath (the main session
+  // transcript) takes priority when both are present.
+  if (!session.transcriptPath && event.transcriptPath) session.transcriptPath = event.transcriptPath;
   const role = event.role || 'claude';
   session._agentSeq += 1;
   const key = `${role}#${session._agentSeq}`;
@@ -128,6 +134,7 @@ function handleRun(world, event) {
         cwd: event.cwd,
         startedAt: event.ts,
         lastSeen: event.ts,
+        transcriptPath: null,
         agents: {},
         run: null,
         _agentSeq: 0,
@@ -190,38 +197,49 @@ function expireStale(world, now, timeoutMs = DEFAULT_STALE_MS) {
   }
 }
 
+function sessionToState(session) {
+  const agents = {};
+  for (const agentKey of Object.keys(session.agents)) {
+    const agent = session.agents[agentKey];
+    agents[agentKey] = {
+      role: agent.role,
+      label: agent.label,
+      activity: agent.activity ? { tool: agent.activity.tool, target: agent.activity.target } : null,
+      startedAt: agent.startedAt,
+    };
+  }
+  return {
+    cwd: session.cwd,
+    startedAt: session.startedAt,
+    lastSeen: session.lastSeen,
+    transcriptPath: session.transcriptPath || null,
+    agents,
+    run: session.run
+      ? {
+          runId: session.run.runId,
+          phase: session.run.phase,
+          triage: session.run.triage,
+          fixLoops: session.run.fixLoops,
+          findings: session.run.findings,
+          startedAt: session.run.startedAt,
+        }
+      : null,
+  };
+}
+
 function toState(world) {
   const sessions = {};
   for (const sessionId of Object.keys(world.sessions)) {
-    const session = world.sessions[sessionId];
-    const agents = {};
-    for (const agentKey of Object.keys(session.agents)) {
-      const agent = session.agents[agentKey];
-      agents[agentKey] = {
-        role: agent.role,
-        label: agent.label,
-        activity: agent.activity ? { tool: agent.activity.tool, target: agent.activity.target } : null,
-        startedAt: agent.startedAt,
-      };
-    }
-    sessions[sessionId] = {
-      cwd: session.cwd,
-      startedAt: session.startedAt,
-      lastSeen: session.lastSeen,
-      agents,
-      run: session.run
-        ? {
-            runId: session.run.runId,
-            phase: session.run.phase,
-            triage: session.run.triage,
-            fixLoops: session.run.fixLoops,
-            findings: session.run.findings,
-            startedAt: session.run.startedAt,
-          }
-        : null,
-    };
+    sessions[sessionId] = sessionToState(world.sessions[sessionId]);
   }
   return { sessions };
 }
 
-module.exports = { createWorld, applyEvent, toState, expireStale };
+// Public-shaped lookup for a single session, used by /api/log to resolve a
+// session's transcriptPath without building the whole world-state JSON.
+function getSession(world, sessionId) {
+  const session = world.sessions[sessionId];
+  return session ? sessionToState(session) : null;
+}
+
+module.exports = { createWorld, applyEvent, toState, expireStale, getSession };

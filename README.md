@@ -145,6 +145,9 @@ No hooks installed yet, or just want to see it move? Append `?demo` to either
 URL (`http://localhost:4517/?demo`, `.../dashboard.html?demo`) for a scripted
 preview that needs no server, no hooks, no real data.
 
+Click a session's sprite in the office to open its live agent console — a
+streaming view of that session's transcript.
+
 Art is hand-drawn pixel tiles and sprites, CC0 — the LimeZu asset packs that
 inspired the look are **not** included or required.
 

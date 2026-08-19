@@ -27,10 +27,14 @@ Every line is one JSON object, written by `emit.js` (except `run` events, see be
 
 Per-type extra fields, merged into the envelope:
 
-- **agent_start**: `{ role, label }`
+- **session_start**: `{ transcriptPath? }`
+  - `transcriptPath`: `payload.transcript_path` as-is, omitted entirely (not written
+    as `null`) when the hook payload has no `transcript_path`.
+- **agent_start**: `{ role, label, transcriptPath? }`
   - `role`: one of `ROLES` (`scout`, `planner`, `implementer`, `reviewer`, `tester`,
     `analyst`), or `claude` as fallback when the subagent type is missing/unrecognized.
   - `label`: the subagent's `description` (short human-readable task summary).
+  - `transcriptPath`: same as above (`payload.transcript_path` as-is, omitted when absent).
 - **agent_activity**: `{ tool, target }`
   - `tool`: `Edit`, `Write`, or `Bash`.
   - `target`: for `Edit`/`Write`, the basename of the edited file; for `Bash`, the
@@ -77,6 +81,7 @@ The collector/server folds the event stream into an in-memory world state, shape
       "cwd": "<string>",
       "startedAt": "<ISO-8601>",
       "lastSeen": "<ISO-8601>",
+      "transcriptPath": "<string>" | null,
       "agents": {
         "<agentKey>": {
           "role": "<ROLES entry>",
@@ -102,6 +107,11 @@ Note: hook payloads carry no agent identity, so attributing an `agent_activity`
 bubble to a specific concurrent agent is heuristic — it attaches to the
 most-recently-started agent still active in that session.
 
+`sessions[].transcriptPath` is populated from the `session_start` event's optional
+`transcriptPath` field (see above), with `agent_start`'s field as a fallback when the
+session doesn't have one yet; consumers treat a missing/never-set value as `null`.
+It backs the agent-console log stream (see `/api/log` below).
+
 **cwd normalization**: `cwd` values in events/world-state are not normalized at the
 source (they're whatever the hook payload reports). Consumers must compare `cwd`
 case-insensitively, with backslashes normalized to forward slashes and any trailing
@@ -114,6 +124,30 @@ per-repo history aggregation or session grouping).
 
 - Event name: `state`. Data: the full world-state JSON, sent on every change.
 - A heartbeat comment (`:`-prefixed line) is sent every 15s to keep the connection alive.
+
+`GET /api/log?session=<sessionId>` — server-sent events, backs the agent console
+(click a session, stream its transcript).
+
+- Event name: `log`. Data: a JSON **array** of log entries.
+- On connect, the server sends the last ~200 entries as one burst, then streams new
+  entries as they appear (one `log` event per new entry or small batch).
+- A heartbeat comment (`:`-prefixed line) is sent every 15s to keep the connection alive.
+- Log entry shape, produced by `lib/transcript.js`'s parser from the session's
+  transcript file (defensive: unknown/odd-shaped lines are skipped rather than
+  breaking the stream):
+  ```json
+  {
+    "ts": "<ISO-8601>",
+    "kind": "thinking" | "text" | "tool_use" | "tool_result" | "user",
+    "text": "<string, truncated to ~2000 chars>",
+    "tool": { "name": "<string>", "target": "<string>" },
+    "sidechain": <bool>
+  }
+  ```
+  `tool` is present only for `tool_use` entries.
+- Unknown session, session without a known transcript, or a transcript path failing
+  the `.jsonl` sanity guard: the server sends a single `log` frame with `[]` and keeps
+  the connection open (heartbeats only) — clients render "no transcript available".
 
 ## History API
 

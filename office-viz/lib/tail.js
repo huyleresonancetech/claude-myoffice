@@ -32,24 +32,25 @@ function dateStr(date) {
 
 // Reads the bytes appended since `offset`, but only up to the last complete
 // line - a trailing partial line (writer mid-append) is left for the next
-// poll instead of being parsed as garbage.
-function readIncrement(filePath, offset) {
+// poll instead of being parsed as garbage. Shared by the events-JSONL tailer
+// and the generic transcript tailer below.
+function readRawIncrement(filePath, offset) {
   let stats;
   try {
     stats = fs.statSync(filePath);
   } catch {
-    return { events: [], offset };
+    return { complete: '', offset };
   }
 
   // File got truncated or rewritten under us - restart from the top.
   if (stats.size < offset) offset = 0;
-  if (stats.size === offset) return { events: [], offset };
+  if (stats.size === offset) return { complete: '', offset };
 
   let fd;
   try {
     fd = fs.openSync(filePath, 'r');
   } catch {
-    return { events: [], offset };
+    return { complete: '', offset };
   }
 
   const length = stats.size - offset;
@@ -65,10 +66,27 @@ function readIncrement(filePath, offset) {
 
   const raw = buffer.slice(0, bytesRead).toString('utf8');
   const lastNewline = raw.lastIndexOf('\n');
-  if (lastNewline === -1) return { events: [], offset }; // no complete line yet
+  if (lastNewline === -1) return { complete: '', offset }; // no complete line yet
 
   const complete = raw.slice(0, lastNewline + 1);
-  return { events: parseLines(complete), offset: offset + Buffer.byteLength(complete, 'utf8') };
+  return { complete, offset: offset + Buffer.byteLength(complete, 'utf8') };
+}
+
+function readIncrement(filePath, offset) {
+  const { complete, offset: next } = readRawIncrement(filePath, offset);
+  return { events: parseLines(complete), offset: next };
+}
+
+// The byte offset consumed by a fresh full read of `filePath`, up to its
+// last complete line. Callers that read a file's current contents (e.g. for
+// an initial burst) and then want to tailFile() it from exactly where that
+// read left off should pin this offset *before* doing that read — since the
+// file only grows, a pre-read offset is always <= what the read actually
+// saw, so nothing appended in between is lost (worst case: a line landing
+// in that gap is briefly visible in both the initial read and the first
+// subsequent tail pump).
+function consumedOffset(filePath) {
+  return readRawIncrement(filePath, 0).offset;
 }
 
 function readFileEvents(filePath) {
@@ -153,4 +171,47 @@ function createTailer(stateDir, onEvent) {
   return { stop };
 }
 
-module.exports = { createTailer, listAllEvents };
+// Generic byte-offset tailer for any append-only text file (used by the
+// agent console to watch a session's transcript). By default starts
+// watching from the file's current size; pass `opts.startOffset` (see
+// `consumedOffset`) when the caller already read the file's existing
+// content and needs to resume from exactly where that read stopped —
+// starting from a fresh `statSync().size` instead would both miss lines
+// appended in the gap between that read and this call, and risk landing
+// mid-line if the file was mid-write at that moment. Independent of
+// createTailer's events-JSONL state, so multiple callers on the same or
+// different files don't interfere: each gets its own offset and its own
+// fs.watchFile listener, unwatched by reference on stop() rather than by
+// path (fs.unwatchFile(path) alone would remove every listener on that
+// path, including other callers').
+function tailFile(filePath, onLines, opts = {}) {
+  const interval = opts.interval || POLL_INTERVAL_MS;
+  let offset;
+  if (typeof opts.startOffset === 'number' && opts.startOffset >= 0) {
+    offset = opts.startOffset;
+  } else {
+    try {
+      offset = fs.statSync(filePath).size;
+    } catch {
+      offset = 0;
+    }
+  }
+
+  function pump() {
+    const { complete, offset: next } = readRawIncrement(filePath, offset);
+    offset = next;
+    if (!complete) return;
+    const lines = complete.split('\n').filter((line) => line.trim());
+    if (lines.length) onLines(lines);
+  }
+
+  fs.watchFile(filePath, { interval }, pump);
+
+  return {
+    stop() {
+      fs.unwatchFile(filePath, pump);
+    },
+  };
+}
+
+module.exports = { createTailer, listAllEvents, tailFile, consumedOffset };
